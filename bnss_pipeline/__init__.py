@@ -1,3 +1,5 @@
+"""BNSS Pipeline — fetch, cache, and structure BNSS legal data."""
+
 from .config import Settings, get_settings
 from .etl_bnss import parse_crosswalk_bnss_crpc, parse_index_bnss, run_etl_bnss
 from .ingest_http import fetch_many, fetch_url
