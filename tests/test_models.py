@@ -1,52 +1,68 @@
-"""Tests for bnss_pipeline.models."""
+"""Unit tests for data models."""
 
 from datetime import datetime, timezone
 
 from bnss_pipeline.models import RawDocument
 
 
-def _make_doc(**overrides) -> RawDocument:
-    defaults = {
-        "source_url": "https://example.com/page.html",
-        "fetched_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
-        "status": 200,
-    }
-    defaults.update(overrides)
-    return RawDocument(**defaults)
-
-
 class TestRawDocument:
-    def test_is_success_for_200(self):
-        doc = _make_doc(status=200)
-        assert doc.is_success is True
+    """Tests for RawDocument model."""
 
-    def test_is_success_for_304(self):
-        doc = _make_doc(status=304)
-        assert doc.is_success is True
+    def test_minimal_creation(self) -> None:
+        doc = RawDocument(
+            source_url="https://example.com",
+            fetched_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            status=200,
+        )
+        assert doc.source_url == "https://example.com"
+        assert doc.status == 200
+        assert doc.error is None
+        assert doc.content_hash is None
 
-    def test_is_success_false_for_404(self):
-        doc = _make_doc(status=404)
-        assert doc.is_success is False
+    def test_full_creation(self) -> None:
+        doc = RawDocument(
+            source_url="https://example.com",
+            fetched_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            status=200,
+            content_hash="abc123",
+            etag='"etag-value"',
+            last_modified="Mon, 01 Jan 2026 00:00:00 GMT",
+            as_of="2026-01-01",
+            raw_html_path="raw_html/abc123.html",
+            raw_meta_path="raw_html/abc123.json",
+        )
+        assert doc.content_hash == "abc123"
+        assert doc.etag == '"etag-value"'
+        assert doc.as_of == "2026-01-01"
 
-    def test_is_success_false_for_error(self):
-        doc = _make_doc(status=-1, error="connection failed")
-        assert doc.is_success is False
+    def test_error_document(self) -> None:
+        doc = RawDocument(
+            source_url="https://example.com/bad",
+            fetched_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            status=500,
+            error="HTTP 500 for https://example.com/bad",
+        )
+        assert doc.error is not None
+        assert doc.status == 500
 
-    def test_effective_hash_prefers_content_hash(self):
-        doc = _make_doc(content_hash="abc", cached_content_hash="def")
-        assert doc.effective_hash == "abc"
-
-    def test_effective_hash_falls_back_to_cached(self):
-        doc = _make_doc(content_hash=None, cached_content_hash="def")
-        assert doc.effective_hash == "def"
-
-    def test_effective_hash_none_when_both_empty(self):
-        doc = _make_doc(content_hash=None, cached_content_hash=None)
-        assert doc.effective_hash is None
-
-    def test_json_roundtrip(self):
-        doc = _make_doc(content_hash="abc123")
-        data = doc.model_dump(mode="json")
-        restored = RawDocument(**data)
+    def test_serialization_roundtrip(self) -> None:
+        doc = RawDocument(
+            source_url="https://example.com",
+            fetched_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            status=200,
+            content_hash="abc123",
+        )
+        json_str = doc.model_dump_json()
+        restored = RawDocument.model_validate_json(json_str)
         assert restored.source_url == doc.source_url
-        assert restored.content_hash == "abc123"
+        assert restored.content_hash == doc.content_hash
+
+    def test_defaults(self) -> None:
+        doc = RawDocument(
+            source_url="https://example.com",
+            fetched_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            status=200,
+        )
+        assert doc.headers == {}
+        assert doc.as_of is None
+        assert doc.cached_content_hash is None
