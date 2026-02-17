@@ -1,3 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
-# DevContext - AI coding context
-.devctx/
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Environment variables
+.env
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Type checking
+.mypy_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Project data (large / generated)
+raw_html/
+datasets/
+manifests/
