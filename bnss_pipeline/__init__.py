@@ -1,4 +1,4 @@
-"""BNSS Pipeline — fetch, cache, and structure BNSS legal data."""
+"""BNSS Pipeline — ETL pipeline for Bharatiya Nagarik Suraksha Sanhita legal data."""
 
 from .config import Settings, get_settings
 from .etl_bnss import parse_crosswalk_bnss_crpc, parse_index_bnss, run_etl_bnss
