@@ -1,0 +1,30 @@
+{
+  "source_url": "https://cytrain.ncrb.gov.in/staticpage/web_pages/SectionTableBNSS.html",
+  "fetched_at": "2026-02-03T21:50:05.255796Z",
+  "status": 200,
+  "headers": {
+    "date": "Tue, 03 Feb 2026 21:33:32 GMT",
+    "server": "Apache",
+    "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+    "x-frame-options": "SAMEORIGIN, sameorigin",
+    "x-content-type-options": "nosniff, nosniff",
+    "last-modified": "Wed, 06 Mar 2024 05:43:12 GMT",
+    "etag": "\"c62ca-612f76f317c00-gzip\"",
+    "accept-ranges": "bytes",
+    "vary": "Accept-Encoding",
+    "content-encoding": "gzip",
+    "x-xss-protection": "1; mode-block",
+    "content-length": "32937",
+    "keep-alive": "timeout=5, max=100",
+    "connection": "Keep-Alive",
+    "content-type": "text/html"
+  },
+  "as_of": "2026-01-10",
+  "content_hash": "14e5248872740078841aa14ab129b6180fb74339f84183a41195bacbf936be87",
+  "raw_html_path": "raw_html/14e5248872740078841aa14ab129b6180fb74339f84183a41195bacbf936be87.html",
+  "raw_meta_path": "raw_html/14e5248872740078841aa14ab129b6180fb74339f84183a41195bacbf936be87.json",
+  "etag": "\"c62ca-612f76f317c00-gzip\"",
+  "last_modified": "Wed, 06 Mar 2024 05:43:12 GMT",
+  "cached_content_hash": null,
+  "error": null
+}

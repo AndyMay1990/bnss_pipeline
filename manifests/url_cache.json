@@ -1,0 +1,14 @@
+{
+  "https://cytrain.ncrb.gov.in/staticpage/web_pages/IndexBNSS.html": {
+    "etag": "\"17169-612f76f317c00-gzip\"",
+    "last_modified": "Wed, 06 Mar 2024 05:43:12 GMT",
+    "last_hash": "175496c89bef7a90dd9972bc62ecb38fbff5387a8d8485a55e09ec8baace22c1",
+    "last_seen_at": "2026-02-03T21:50:03.675746+00:00"
+  },
+  "https://cytrain.ncrb.gov.in/staticpage/web_pages/SectionTableBNSS.html": {
+    "etag": "\"c62ca-612f76f317c00-gzip\"",
+    "last_modified": "Wed, 06 Mar 2024 05:43:12 GMT",
+    "last_hash": "14e5248872740078841aa14ab129b6180fb74339f84183a41195bacbf936be87",
+    "last_seen_at": "2026-02-03T21:50:05.255796+00:00"
+  }
+}

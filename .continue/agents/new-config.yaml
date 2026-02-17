@@ -1,0 +1,130 @@
+name: Local DeepSeek Gateway
+version: 0.0.1
+schema: v1
+
+models:
+  - name: DeepSeek-V1 (local)
+    provider: openai
+    model: DeepSeek-V1
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-V2 (local)
+    provider: openai
+    model: DeepSeek-V2
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-V2.5 (local)
+    provider: openai
+    model: DeepSeek-V2.5
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-V3 (local)
+    provider: openai
+    model: DeepSeek-V3
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-V3-0324 (local)
+    provider: openai
+    model: DeepSeek-V3-0324
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-V3.1 (local)
+    provider: openai
+    model: DeepSeek-V3.1
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-V3.2 (local)
+    provider: openai
+    model: DeepSeek-V3.2
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-R1 (local)
+    provider: openai
+    model: DeepSeek-R1
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-R1-0528 (local)
+    provider: openai
+    model: DeepSeek-R1-0528
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-R1-Distill (local)
+    provider: openai
+    model: DeepSeek-R1-Distill
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-Prover-V1 (local)
+    provider: openai
+    model: DeepSeek-Prover-V1
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-Prover-V1.5 (local)
+    provider: openai
+    model: DeepSeek-Prover-V1.5
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-Prover-V2 (local)
+    provider: openai
+    model: DeepSeek-Prover-V2
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-VL (local)
+    provider: openai
+    model: DeepSeek-VL
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-Coder (local)
+    provider: openai
+    model: DeepSeek-Coder
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-Coder-V2 (local)
+    provider: openai
+    model: DeepSeek-Coder-V2
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-Coder-6.7B-base (local)
+    provider: openai
+    model: DeepSeek-Coder-6.7B-base
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
+
+  - name: DeepSeek-Coder-6.7B-instruct (local)
+    provider: openai
+    model: DeepSeek-Coder-6.7B-instruct
+    apiBase: "http://127.0.0.1:8787/v1"
+    apiKey: dummy
+    roles: [chat, edit, apply]
