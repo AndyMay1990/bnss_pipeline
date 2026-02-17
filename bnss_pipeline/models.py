@@ -1,4 +1,4 @@
-"""Pydantic models shared across the pipeline."""
+"""Data models for BNSS Pipeline."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 
 class RawDocument(BaseModel):
-    """Represents the result of fetching a single URL."""
+    """Represents a fetched HTTP response with metadata and caching info."""
 
     source_url: str
     fetched_at: datetime
@@ -26,13 +26,3 @@ class RawDocument(BaseModel):
     cached_content_hash: Optional[str] = None
 
     error: Optional[str] = None
-
-    @property
-    def is_success(self) -> bool:
-        """Return True when the fetch was successful (2xx or 304)."""
-        return self.status < 400
-
-    @property
-    def effective_hash(self) -> Optional[str]:
-        """Return whichever content hash is available."""
-        return self.content_hash or self.cached_content_hash

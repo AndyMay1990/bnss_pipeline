@@ -1,4 +1,4 @@
-"""ETL: parse cached BNSS HTML into structured JSONL datasets."""
+"""ETL logic: parse cached BNSS HTML into structured JSONL datasets."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class BnssSectionIndexRow(BaseModel):
-    """One row in the BNSS sections-index dataset."""
+    """A single section from the BNSS index page."""
 
     canonical_id: str
     law: str = "BNSS"
@@ -36,7 +36,7 @@ class BnssSectionIndexRow(BaseModel):
 
 
 class CrosswalkRow(BaseModel):
-    """One row mapping a BNSS section to the old CrPC section."""
+    """Maps a BNSS section to its corresponding CrPC section."""
 
     bnss_section_no: str
     bnss_section_title: Optional[str] = None
@@ -49,16 +49,16 @@ class CrosswalkRow(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# File helpers
+# I/O helpers
 # ---------------------------------------------------------------------------
 
 def _read_json(path: Path) -> Dict[str, Any]:
-    """Read a JSON file (tolerates UTF-8 BOM)."""
-    return json.loads(path.read_text(encoding="utf-8-sig"))
+    """Read JSON file with utf-8 encoding (no BOM workaround needed)."""
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _latest_hash_for(url_cache: Dict[str, Any], url: str) -> str:
-    """Return the most recent content hash for *url* from the URL cache."""
+    """Get the most recent content hash for a URL from the cache."""
     entry = url_cache.get(url)
     if not entry or not entry.get("last_hash"):
         raise ValueError(f"No last_hash in url_cache for url={url}")
@@ -73,18 +73,18 @@ def _load_html_by_hash(raw_html_dir: Path, content_hash: str) -> str:
     return p.read_text(encoding="utf-8", errors="replace")
 
 
-def _write_jsonl_atomic(path: Path, rows: Iterable[BaseModel]) -> int:
-    """Write rows to a JSONL file atomically. Returns the row count."""
+def _write_jsonl(path: Path, rows: Iterable[BaseModel]) -> None:
+    """Write models to JSONL atomically via tmp-file rename."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    count = 0
     with tmp.open("w", encoding="utf-8", newline="\n") as f:
+        count = 0
         for r in rows:
             f.write(r.model_dump_json())
             f.write("\n")
             count += 1
     tmp.replace(path)
-    return count
+    logger.info("Wrote %d rows to %s", count, path)
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ def _roman_to_int(roman: str) -> int:
 
 
 def _validate_as_of(as_of: str) -> str:
-    """Validate that *as_of* is in YYYY-MM-DD format."""
+    """Validate that as_of is a YYYY-MM-DD date string."""
     try:
         date.fromisoformat(as_of)
     except ValueError as exc:
@@ -117,7 +117,7 @@ def _validate_as_of(as_of: str) -> str:
 
 
 def canonical_id_bnss(chapter_no: int, section_no: int) -> str:
-    """Build a canonical ID like ``BNSS:CH01:S001``."""
+    """Generate a canonical ID like BNSS:CH01:S001."""
     return f"BNSS:CH{chapter_no:02d}:S{section_no:03d}"
 
 
@@ -137,22 +137,14 @@ CROSSWALK_CELL_RE = re.compile(
 
 
 def _clean_cell_text(text: str) -> str:
-    """Collapse whitespace and strip artefacts from a table-cell string."""
+    """Normalize whitespace and strip trailing dots from cell text."""
     cleaned = " ".join(text.split())
     cleaned = re.sub(r"\s*\(Change\)\s*", " ", cleaned, flags=re.IGNORECASE)
     return cleaned.strip().rstrip(".")
 
 
-def _plain_url(u: str) -> str:
-    """Unwrap a Markdown link ``[text](href)`` to just *href*."""
-    u = (u or "").strip()
-    if u.startswith("[") and "](" in u and u.endswith(")"):
-        return u.split("](", 1)[1][:-1].strip()
-    return u
-
-
 def _split_section_cell(text: str) -> Tuple[Optional[str], Optional[str]]:
-    """Split a crosswalk table cell into (section_no, section_title)."""
+    """Split a crosswalk cell into (section_no, title)."""
     cleaned = _clean_cell_text(text)
     if not cleaned:
         return None, None
@@ -171,9 +163,21 @@ def _split_section_cell(text: str) -> Tuple[Optional[str], Optional[str]]:
 def parse_index_bnss(
     html: str, *, source_url: str, content_hash: str, version: str
 ) -> List[BnssSectionIndexRow]:
-    """Parse the BNSS index HTML into a list of section-index rows."""
+    """Parse the BNSS index HTML into structured section rows.
+
+    Args:
+        html: Raw HTML content of the index page.
+        source_url: The URL the HTML was fetched from.
+        content_hash: SHA-256 hash of the HTML content.
+        version: Dataset version string (e.g. 'bnss@2026-01-10').
+
+    Returns:
+        List of BnssSectionIndexRow objects.
+
+    Raises:
+        ValueError: If no chapters or sections are found (HTML changed).
+    """
     soup = BeautifulSoup(html, "lxml")
-    source_url = _plain_url(source_url)
 
     text = soup.get_text(" ", strip=True)
     text = " ".join(text.split())
@@ -185,7 +189,7 @@ def parse_index_bnss(
         chapters.append((m.start(), m.end(), ch_no, ch_title))
 
     if not chapters:
-        raise ValueError("No CHAPTER headings found in IndexBNSS text (HTML changed).")
+        raise ValueError("No CHAPTER headings found in IndexBNSS HTML.")
 
     chapters.sort(key=lambda x: x[0])
     logger.info("Found %d chapters in index HTML", len(chapters))
@@ -197,8 +201,7 @@ def parse_index_bnss(
 
         for sm in SECTION_RE.finditer(chunk):
             sec_no = int(sm.group(1))
-            title = sm.group(2).strip()
-            title = _clean_cell_text(title)
+            title = _clean_cell_text(sm.group(2).strip())
             if not title or len(title) < 3:
                 continue
 
@@ -216,27 +219,35 @@ def parse_index_bnss(
             )
 
     if not rows:
-        raise ValueError("parse_index_bnss produced 0 rows (section pattern not found).")
+        raise ValueError("parse_index_bnss produced 0 rows.")
 
-    logger.info("Parsed %d section-index rows", len(rows))
+    logger.info("Parsed %d section index rows", len(rows))
     return rows
-
-
-def _pick_main_table(soup: BeautifulSoup):
-    """Select the table with the most rows from the soup."""
-    tables = soup.find_all("table")
-    if not tables:
-        raise ValueError("No <table> found in crosswalk HTML.")
-    return max(tables, key=lambda t: len(t.find_all("tr")))
 
 
 def parse_crosswalk_bnss_crpc(
     html: str, *, source_url: str, content_hash: str, version: str
 ) -> List[CrosswalkRow]:
-    """Parse the BNSS↔CrPC crosswalk HTML table."""
+    """Parse the BNSS/CrPC crosswalk HTML table.
+
+    Args:
+        html: Raw HTML content of the crosswalk page.
+        source_url: The URL the HTML was fetched from.
+        content_hash: SHA-256 hash of the HTML content.
+        version: Dataset version string.
+
+    Returns:
+        List of CrosswalkRow objects.
+
+    Raises:
+        ValueError: If no table or rows are found.
+    """
     soup = BeautifulSoup(html, "lxml")
-    source_url = _plain_url(source_url)
-    table = _pick_main_table(soup)
+    tables = soup.find_all("table")
+    if not tables:
+        raise ValueError("No <table> found in crosswalk HTML.")
+
+    table = max(tables, key=lambda t: len(t.find_all("tr")))
     trs = table.find_all("tr")
 
     out: List[CrosswalkRow] = []
@@ -270,22 +281,24 @@ def parse_crosswalk_bnss_crpc(
         )
 
     if not out:
-        raise ValueError(
-            "parse_crosswalk_bnss_crpc produced 0 rows (HTML structure likely changed)."
-        )
+        raise ValueError("parse_crosswalk_bnss_crpc produced 0 rows.")
 
     logger.info("Parsed %d crosswalk rows", len(out))
     return out
 
 
 # ---------------------------------------------------------------------------
-# Orchestrator
+# Pipeline entry point
 # ---------------------------------------------------------------------------
 
 def run_etl_bnss(*, as_of: str) -> Tuple[Path, Path]:
-    """Run the full ETL: read cached HTML → parse → write JSONL datasets.
+    """Run the full ETL: read cached HTML, parse, write JSONL datasets.
 
-    Returns ``(sections_path, crosswalk_path)``.
+    Args:
+        as_of: Dataset version date (YYYY-MM-DD).
+
+    Returns:
+        Tuple of (sections_path, crosswalk_path).
     """
     s = get_settings()
     as_of = _validate_as_of(as_of)
@@ -298,32 +311,32 @@ def run_etl_bnss(*, as_of: str) -> Tuple[Path, Path]:
         )
     url_cache = _read_json(url_cache_path)
 
-    index_url = s.cytrain_index_bnss
-    table_url = s.cytrain_section_table_bnss
+    index_hash = _latest_hash_for(url_cache, s.cytrain_index_bnss)
+    table_hash = _latest_hash_for(url_cache, s.cytrain_section_table_bnss)
 
-    index_hash = _latest_hash_for(url_cache, index_url)
-    table_hash = _latest_hash_for(url_cache, table_url)
+    logger.info("Loading cached HTML (index=%s, table=%s)", index_hash[:12], table_hash[:12])
 
-    logger.info("Loading index HTML (hash=%s)", index_hash[:12])
     index_html = _load_html_by_hash(s.project_root / s.raw_html_dir, index_hash)
-
-    logger.info("Loading crosswalk HTML (hash=%s)", table_hash[:12])
     table_html = _load_html_by_hash(s.project_root / s.raw_html_dir, table_hash)
 
     sections = parse_index_bnss(
-        index_html, source_url=index_url, content_hash=index_hash, version=version
+        index_html,
+        source_url=s.cytrain_index_bnss,
+        content_hash=index_hash,
+        version=version,
     )
     crosswalk = parse_crosswalk_bnss_crpc(
-        table_html, source_url=table_url, content_hash=table_hash, version=version
+        table_html,
+        source_url=s.cytrain_section_table_bnss,
+        content_hash=table_hash,
+        version=version,
     )
 
     ds_dir = s.project_root / s.datasets_dir
     sections_path = ds_dir / "bnss_sections_index.jsonl"
     crosswalk_path = ds_dir / "bnss_crosswalk.jsonl"
 
-    n_sec = _write_jsonl_atomic(sections_path, sections)
-    n_cw = _write_jsonl_atomic(crosswalk_path, crosswalk)
-    logger.info("Wrote %d sections → %s", n_sec, sections_path)
-    logger.info("Wrote %d crosswalk rows → %s", n_cw, crosswalk_path)
+    _write_jsonl(sections_path, sections)
+    _write_jsonl(crosswalk_path, crosswalk)
 
     return sections_path, crosswalk_path
