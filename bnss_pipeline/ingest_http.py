@@ -1,12 +1,15 @@
-﻿from __future__ import annotations
+"""HTTP ingestion with conditional GET, content-addressed caching, and retry."""
+
+from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -14,24 +17,32 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from .config import Settings, get_settings
 from .models import RawDocument
 
+logger = logging.getLogger(__name__)
 
 URL_CACHE_NAME = "url_cache.json"
-RETRY_STATUS = {408, 429, 500, 502, 503, 504}
+RETRY_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 
 
 @dataclass(frozen=True)
 class CacheEntry:
+    """Per-URL conditional-GET metadata."""
+
     etag: Optional[str] = None
     last_modified: Optional[str] = None
     last_hash: Optional[str] = None
     last_seen_at: Optional[str] = None
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
 def _safe_ts(dt: datetime) -> str:
+    """Return a filesystem-safe UTC timestamp string."""
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
 
 
@@ -40,19 +51,26 @@ def _sha256_bytes(data: bytes) -> str:
 
 
 def _read_json(path: Path) -> Dict[str, Any]:
+    """Read a JSON file, returning {} if the file doesn't exist."""
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def _write_json_atomic(path: Path, payload: Dict[str, Any]) -> None:
+    """Write JSON to *path* atomically via a temporary file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)
 
 
+# ---------------------------------------------------------------------------
+# URL cache
+# ---------------------------------------------------------------------------
+
 def _load_url_cache(manifests_dir: Path) -> Dict[str, CacheEntry]:
+    """Load the URL cache from disk."""
     p = manifests_dir / URL_CACHE_NAME
     raw = _read_json(p)
     out: Dict[str, CacheEntry] = {}
@@ -67,6 +85,7 @@ def _load_url_cache(manifests_dir: Path) -> Dict[str, CacheEntry]:
 
 
 def _save_url_cache(manifests_dir: Path, cache: Dict[str, CacheEntry]) -> None:
+    """Persist the URL cache to disk."""
     p = manifests_dir / URL_CACHE_NAME
     payload = {
         url: {
@@ -79,6 +98,10 @@ def _save_url_cache(manifests_dir: Path, cache: Dict[str, CacheEntry]) -> None:
     }
     _write_json_atomic(p, payload)
 
+
+# ---------------------------------------------------------------------------
+# HTTP helpers
+# ---------------------------------------------------------------------------
 
 def _normalize_headers(headers: httpx.Headers) -> Dict[str, str]:
     return {k.lower(): v for k, v in headers.items()}
@@ -94,8 +117,8 @@ def _raise_for_retryable_status(resp: httpx.Response) -> None:
 
 
 def _build_conditional_headers(cache_entry: Optional[CacheEntry]) -> Dict[str, str]:
+    """Build If-None-Match / If-Modified-Since headers from cache."""
     h: Dict[str, str] = {}
-    # Conditional GET using If-None-Match (ETag). [web:55]
     if cache_entry and cache_entry.etag:
         h["if-none-match"] = cache_entry.etag
     if cache_entry and cache_entry.last_modified:
@@ -104,7 +127,7 @@ def _build_conditional_headers(cache_entry: Optional[CacheEntry]) -> Dict[str, s
 
 
 def _client(settings: Settings) -> httpx.Client:
-    # Explicit timeouts to avoid hanging requests. [web:73]
+    """Create a configured httpx client."""
     return httpx.Client(
         timeout=settings.timeout_total,
         follow_redirects=True,
@@ -117,7 +140,7 @@ def _client(settings: Settings) -> httpx.Client:
 
 
 def _retry_decorator(settings: Settings):
-    # Exponential backoff retry. [web:94]
+    """Build a tenacity retry decorator from settings."""
     return retry(
         stop=stop_after_attempt(settings.max_attempts),
         wait=wait_exponential(
@@ -129,7 +152,20 @@ def _retry_decorator(settings: Settings):
     )
 
 
-def fetch_url(url: str, *, settings: Optional[Settings] = None, as_of: Optional[str] = None) -> RawDocument:
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def fetch_url(
+    url: str,
+    *,
+    settings: Optional[Settings] = None,
+    as_of: Optional[str] = None,
+) -> RawDocument:
+    """Fetch a single URL with conditional GET and content-addressed caching.
+
+    Returns a *RawDocument* describing the outcome.
+    """
     s = settings or get_settings()
     s.ensure_dirs()
 
@@ -150,16 +186,21 @@ def fetch_url(url: str, *, settings: Optional[Settings] = None, as_of: Optional[
             return resp
 
     fetched_at = _utc_now()
+    logger.info("Fetching %s (as_of=%s)", url, as_of)
     resp = _do_request()
     headers = _normalize_headers(resp.headers)
 
     etag = headers.get("etag")
     last_modified = headers.get("last-modified")
 
-    # 304 Not Modified is success. [web:52]
+    # --- 304 Not Modified ------------------------------------------------
     if resp.status_code == 304:
         if not ce or not ce.last_hash:
-            raise RuntimeError(f"Received 304 for {url} but no cached content hash exists.")
+            raise RuntimeError(
+                f"Received 304 for {url} but no cached content hash exists."
+            )
+        logger.info("304 Not Modified for %s (cached hash: %s)", url, ce.last_hash)
+
         url_cache[url] = CacheEntry(
             etag=etag or (ce.etag if ce else None),
             last_modified=last_modified or (ce.last_modified if ce else None),
@@ -182,8 +223,13 @@ def fetch_url(url: str, *, settings: Optional[Settings] = None, as_of: Optional[
         _write_json_atomic(mf, doc.model_dump(mode="json"))
         return doc
 
+    # --- Fresh body ------------------------------------------------------
     body = resp.content
     content_hash = _sha256_bytes(body)
+    logger.info(
+        "HTTP %d for %s (%d bytes, hash=%s)",
+        resp.status_code, url, len(body), content_hash[:12],
+    )
 
     html_path = raw_dir / f"{content_hash}.html"
     meta_path = raw_dir / f"{content_hash}.json"
@@ -202,6 +248,7 @@ def fetch_url(url: str, *, settings: Optional[Settings] = None, as_of: Optional[
         }
         _write_json_atomic(meta_path, meta_payload)
 
+    # --- HTTP errors (4xx/5xx) -------------------------------------------
     if resp.status_code >= 400:
         doc = RawDocument(
             source_url=url,
@@ -224,6 +271,7 @@ def fetch_url(url: str, *, settings: Optional[Settings] = None, as_of: Optional[
             response=resp,
         )
 
+    # --- Success (2xx) ---------------------------------------------------
     url_cache[url] = CacheEntry(
         etag=etag,
         last_modified=last_modified,
@@ -249,5 +297,29 @@ def fetch_url(url: str, *, settings: Optional[Settings] = None, as_of: Optional[
     return doc
 
 
-def fetch_many(urls: list[str], *, settings: Optional[Settings] = None, as_of: Optional[str] = None) -> list[RawDocument]:
-    return [fetch_url(u, settings=settings, as_of=as_of) for u in urls]
+def fetch_many(
+    urls: list[str],
+    *,
+    settings: Optional[Settings] = None,
+    as_of: Optional[str] = None,
+) -> List[RawDocument]:
+    """Fetch multiple URLs, continuing on individual failures.
+
+    Failed URLs are returned as *RawDocument* instances with the
+    ``error`` field populated instead of raising.
+    """
+    results: List[RawDocument] = []
+    for url in urls:
+        try:
+            results.append(fetch_url(url, settings=settings, as_of=as_of))
+        except Exception as exc:
+            logger.error("Failed to fetch %s: %s", url, exc)
+            results.append(
+                RawDocument(
+                    source_url=url,
+                    fetched_at=_utc_now(),
+                    status=-1,
+                    error=str(exc),
+                )
+            )
+    return results
