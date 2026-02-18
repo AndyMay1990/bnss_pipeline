@@ -1,85 +1,156 @@
 # BNSS Pipeline
 
-This project fetches BNSS source pages, caches the raw HTML, and builds structured datasets for downstream use.
+ETL pipeline for extracting, transforming, and loading structured data from the [Bharatiya Nagarik Suraksha Sanhita (BNSS)](https://cytrain.ncrb.gov.in/staticpage/web_pages/IndexBNSS.html) — India's new criminal procedure code that replaced the Code of Criminal Procedure (CrPC) in 2024.
 
-**What It Does**
-1. Fetches BNSS pages with conditional requests and caching.
-2. Stores raw HTML and metadata in `raw_html/` and `manifests/`.
-3. Parses the BNSS index and crosswalk table into JSONL datasets in `datasets/`.
+## What It Does
 
-**Requirements**
-1. Python 3.13 or later.
-2. Internet access for the fetch step.
+1. **Fetches** BNSS source HTML from the NCRB CyTrain portal with conditional GET caching
+2. **Parses** the HTML into structured datasets (section index + BNSS-to-CrPC crosswalk)
+3. **Outputs** versioned JSONL files ready for search, RAG, or analysis
 
-**Install**
+## Architecture
+
+```
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐
+│  CyTrain     │────▶│  ingest_http │────▶│  raw_html/   │
+│  (NCRB)      │     │  (fetch)     │     │  (cached)    │
+└─────────────┘     └──────────────┘     └──────┬───────┘
+                                                │
+                                         ┌──────▼───────┐
+                                         │  etl_bnss    │
+                                         │  (parse)     │
+                                         └──────┬───────┘
+                                                │
+                    ┌───────────────────────────┼───────────────────┐
+                    │                           │                   │
+             ┌──────▼───────┐           ┌───────▼──────┐   ┌───────▼──────┐
+             │  sections    │           │  crosswalk   │   │  validate    │
+             │  index.jsonl │           │  .jsonl      │   │  (check)     │
+             └──────────────┘           └──────────────┘   └──────────────┘
+```
+
+## Quick Start
+
 ```bash
-python -m venv .venv
-.\.venv\Scripts\activate
-pip install -e .
+# Clone and install
+git clone https://github.com/AndyMay1990/bnss_pipeline.git
+cd bnss_pipeline
+pip install -e '.[dev]'
+
+# Copy and edit configuration
+cp .env.example .env
+
+# Run the full pipeline
+bnss-pipeline all --as-of 2026-02-17
+
+# Or run steps individually
+bnss-pipeline fetch --as-of 2026-02-17
+bnss-pipeline etl --as-of 2026-02-17
+bnss-pipeline validate --as-of 2026-02-17
 ```
 
-If you use `uv`, this also works:
+## CLI Commands
+
+| Command | Description |
+|---|---|
+| `bnss-pipeline fetch` | Download and cache BNSS source HTML pages |
+| `bnss-pipeline etl` | Parse cached HTML into JSONL datasets |
+| `bnss-pipeline validate` | Validate dataset integrity (gaps, duplicates, schema) |
+| `bnss-pipeline all` | Run fetch → ETL → validate in sequence |
+
+All commands support:
+- `--as-of YYYY-MM-DD` — Dataset version date (defaults to today)
+- `-v` / `--verbose` — Enable debug logging
+
+## Output Datasets
+
+### `bnss_sections_index.jsonl`
+
+All 532 BNSS sections with chapter structure:
+
+```json
+{
+  "canonical_id": "BNSS:CH01:S001",
+  "law": "BNSS",
+  "chapter_no": 1,
+  "chapter_title": "PRELIMINARY",
+  "section_no": 1,
+  "section_title": "Short title, commencement and application",
+  "source_url": "https://cytrain.ncrb.gov.in/...",
+  "content_hash": "a1b2c3...",
+  "version": "bnss@2026-02-17"
+}
+```
+
+### `bnss_crosswalk.jsonl`
+
+Mapping of BNSS sections to old CrPC sections:
+
+```json
+{
+  "bnss_section_no": "1",
+  "bnss_section_title": "Short title",
+  "crpc_section_no": "1",
+  "crpc_section_title": "Short title",
+  "remarks": "No change",
+  "source_url": "https://cytrain.ncrb.gov.in/...",
+  "content_hash": "d4e5f6...",
+  "version": "bnss@2026-02-17"
+}
+```
+
+## Configuration
+
+All settings use the `BNSS_` prefix and can be set via environment variables or `.env` file.
+See [`.env.example`](.env.example) for the full list.
+
+| Variable | Default | Description |
+|---|---|---|
+| `BNSS_TIMEOUT_TOTAL` | `30.0` | HTTP request timeout (seconds) |
+| `BNSS_MAX_ATTEMPTS` | `5` | Max retry attempts for transient failures |
+| `BNSS_MIN_DELAY_SECONDS` | `1.0` | Minimum delay between requests |
+| `BNSS_RAW_HTML_DIR` | `raw_html` | Directory for cached HTML files |
+| `BNSS_DATASETS_DIR` | `datasets` | Directory for output JSONL files |
+
+## Development
+
 ```bash
-uv sync
+# Install dev dependencies
+make dev
+
+# Run tests
+make test
+
+# Lint
+make lint
+
+# Auto-format
+make format
 ```
 
-**Quickstart**
-```bash
-python -m bnss_pipeline.cli all --as-of 2026-02-03
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full development guidelines.
+
+## Project Structure
+
+```
+bnss_pipeline/
+├── __init__.py          # Public API exports
+├── config.py            # Settings via pydantic-settings
+├── models.py            # RawDocument data model
+├── ingest_http.py       # HTTP fetch with caching and retry
+├── etl_bnss.py          # HTML parsing into structured data
+├── validate.py          # Dataset validation checks
+└── cli.py               # CLI entry point
+tests/
+├── conftest.py          # Shared test fixtures
+├── test_etl_parsers.py  # Parser tests
+├── test_helpers.py      # Helper function tests
+├── test_models.py       # Model tests
+├── test_config.py       # Config tests
+├── test_cli.py          # CLI tests
+└── test_validate.py     # Validation tests
 ```
 
-**CLI**
-```bash
-python -m bnss_pipeline.cli fetch --as-of 2026-02-03
-python -m bnss_pipeline.cli etl --as-of 2026-02-03
-python -m bnss_pipeline.cli all --as-of 2026-02-03
-```
+## License
 
-If installed as a package, you can also run:
-```bash
-bnss-pipeline all --as-of 2026-02-03
-```
-
-**Outputs**
-1. `datasets/bnss_sections_index.jsonl`
-2. `datasets/bnss_crosswalk.jsonl`
-
-**Data Flow**
-1. `fetch` stores raw HTML in `raw_html/` and fetch manifests in `manifests/`.
-2. `etl` reads `manifests/url_cache.json` to find the latest cached HTML and writes JSONL datasets.
-
-**Configuration**
-Configuration is driven by environment variables with the `BNSS_` prefix. These map to fields in `bnss_pipeline/config.py`.
-
-Common options:
-1. `BNSS_USER_AGENT`
-2. `BNSS_ACCEPT_LANGUAGE`
-3. `BNSS_MIN_DELAY_SECONDS`
-4. `BNSS_TIMEOUT_TOTAL`
-5. `BNSS_MAX_ATTEMPTS`
-6. `BNSS_BACKOFF_MULTIPLIER`
-7. `BNSS_BACKOFF_MIN`
-8. `BNSS_BACKOFF_MAX`
-9. `BNSS_PROJECT_ROOT`
-10. `BNSS_RAW_HTML_DIR`
-11. `BNSS_MANIFESTS_DIR`
-12. `BNSS_DATASETS_DIR`
-
-**Python API**
-```python
-from bnss_pipeline import fetch_many, run_etl_bnss, get_settings
-
-s = get_settings()
-results = fetch_many([s.cytrain_index_bnss, s.cytrain_section_table_bnss], as_of="2026-02-03")
-sections_path, crosswalk_path = run_etl_bnss(as_of="2026-02-03")
-```
-
-**Project Layout**
-1. `bnss_pipeline/` package source.
-2. `raw_html/` cached HTML and metadata.
-3. `manifests/` fetch manifests and URL cache.
-4. `datasets/` generated JSONL datasets.
-
-**Notes**
-1. The ETL step requires a successful fetch run beforehand.
-2. If the upstream HTML changes, parsing may fail and should be updated in `bnss_pipeline/etl_bnss.py`.
+MIT — see [LICENSE](LICENSE) for details.
