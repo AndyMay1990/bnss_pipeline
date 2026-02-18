@@ -12,6 +12,7 @@ from typing import List, Optional
 from .config import get_settings
 from .etl_bnss import run_etl_bnss
 from .ingest_http import fetch_many
+from .validate import run_validation
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,10 @@ def build_parser() -> argparse.ArgumentParser:
     etl = sub.add_parser("etl", help="Step 2: parse cached HTML into datasets")
     etl.add_argument("--as-of", default=None, help="Dataset version date (YYYY-MM-DD)")
 
-    run_all = sub.add_parser("all", help="Fetch then run ETL")
+    validate = sub.add_parser("validate", help="Step 3: validate dataset integrity")
+    validate.add_argument("--as-of", default=None, help="Dataset version date (YYYY-MM-DD)")
+
+    run_all = sub.add_parser("all", help="Fetch, ETL, then validate")
     run_all.add_argument(
         "--source", choices=["cytrain"], default="cytrain", help="Upstream source preset"
     )
@@ -86,12 +90,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(json.dumps({"sections": str(sections_path), "crosswalk": str(crosswalk_path)}, indent=2))
         return 0
 
+    if args.cmd == "validate":
+        report = run_validation(as_of=_resolve_as_of(args.as_of))
+        print(report.summary())
+        return 0 if report.passed else 1
+
     if args.cmd == "all":
         urls = _seed_urls(args.source)
         fetch_many(urls, as_of=_resolve_as_of(args.as_of))
         sections_path, crosswalk_path = run_etl_bnss(as_of=_resolve_as_of(args.as_of))
         print(json.dumps({"sections": str(sections_path), "crosswalk": str(crosswalk_path)}, indent=2))
-        return 0
+
+        report = run_validation(as_of=_resolve_as_of(args.as_of))
+        print(report.summary())
+        return 0 if report.passed else 1
 
     return 2
 
